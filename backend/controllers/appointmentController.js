@@ -43,9 +43,6 @@ exports.createAppointment = async (req, res) => {
 
     await appointment.save();
 
-  
-    await appointment.save();
-
     // Log this activity
     const loggedInUser = req.user ? req.user._id : null;
     await logActivity(loggedInUser, `Created appointment request for visitor profile ${visitorId}`);
@@ -71,25 +68,25 @@ exports.getAppointments = async (req, res) => {
       // Hosts can only see appointments assigned to them
       query.hostId = req.user._id;
     } else if (req.user.role === 'Visitor') {
-      
+
       // Visitors can only see their own appointments
       const visitorProfile = await Visitor.findOne({ email: req.user.email });
-      
+
       if (visitorProfile) {
         query.visitorId = visitorProfile._id;
-        
+
       } else {
-        
+
         return res.json([]); // Return empty if no visitor profile exists yet
       }
     }
-    
+
     const appointments = await Appointment.find(query)
       .populate('visitorId')
       .populate('hostId', 'name email')
       .populate('organizationId', 'name')
       .sort({ createdAt: -1 });
-      
+
 
     res.json(appointments);
   } catch (error) {
@@ -118,47 +115,57 @@ exports.approveAppointment = async (req, res) => {
     const host = await User.findById(appointment.hostId);
     const organization = await Organization.findById(appointment.organizationId);
 
-    // 1. Generate QR Code containing visitor/pass verify payload
-    const qrPayload = JSON.stringify({
-      appointmentId: appointment._id,
-      visitorId: visitor._id,
-      name: visitor.name,
-      phone: visitor.phone,
-      organizationId: organization._id
-    });
-    const qrCodeDataUrl = await QRCode.toDataURL(qrPayload);
-
-    // 2. Set Expiry Date (pass is valid for 24 hours from appointment date)
+    // Pass valid for 24 hours
     const expiryDate = new Date(appointment.date);
     expiryDate.setHours(expiryDate.getHours() + 24);
 
-    const tempPass = {
-  visitorId: visitor._id,
-  appointmentId: appointment._id,
-  qrCode: qrCodeDataUrl,
-  expiryDate
-};
-console.log("Visitor Email:", visitor.email);
-const pdfFilename = await generatePassPDF(
-  tempPass,
-  visitor,
-  host,
-  organization
-);
-console.log("PDF FILE:", pdfFilename);
-const pass = new Pass({
-  visitorId: visitor._id,
-  appointmentId: appointment._id,
-  qrCode: qrCodeDataUrl,
-  pdfPath: pdfFilename,
-  expiryDate
-});
+    // Create pass first
+    const pass = new Pass({
+      visitorId: visitor._id,
+      appointmentId: appointment._id,
+      qrCode: 'TEMP',
+      pdfPath: 'TEMP',
+      expiryDate
+    });
 
-await pass.save();
-console.log("PASS SAVED");
+    await pass.save();
+
+    // Generate QR using passId
+    const qrPayload = JSON.stringify({
+      passId: pass._id
+    });
+
+    const qrCodeDataUrl = await QRCode.toDataURL(qrPayload);
+
+    // Generate PDF
+    const tempPass = {
+      visitorId: visitor._id,
+      appointmentId: appointment._id,
+      qrCode: qrCodeDataUrl,
+      expiryDate
+    };
+
+    console.log("Visitor Email:", visitor.email);
+
+    const pdfFilename = await generatePassPDF(
+      tempPass,
+      visitor,
+      host,
+      organization
+    );
+
+    console.log("PDF FILE:", pdfFilename);
+
+    // Update pass with actual values
+    pass.qrCode = qrCodeDataUrl;
+    pass.pdfPath = pdfFilename;
+
+    await pass.save();
+
+    console.log("PASS SAVED");
     // 5. Send notifications (Email with attachment & mock SMS)
     await sendPassEmail(visitor.email, visitor.name, pdfFilename);
-    sendSMS(visitor.phone, `Hello ${visitor.name}, your visit to ${organization.name} is approved. Your digital pass has been emailed to you.`);
+    await sendSMS(visitor.phone, `Hello ${visitor.name}, your visit to ${organization.name} is approved. Your digital pass has been emailed to you.`);
 
     // 6. Write Audit Log
     await logActivity(req.user._id, `Approved appointment ${appointment._id} and generated digital pass ${pass._id}`);
@@ -188,7 +195,7 @@ exports.rejectAppointment = async (req, res) => {
     // Notify Visitor
     const visitor = await Visitor.findById(appointment.visitorId);
     await sendApprovalNotice(visitor.email, visitor.name, 'Rejected');
-    sendSMS(visitor.phone, `Hello ${visitor.name}, unfortunately your appointment request has been rejected.`);
+    await sendSMS(visitor.phone, `Hello ${visitor.name}, unfortunately your appointment request has been rejected.`);
 
     // Write Audit Log
     await logActivity(req.user._id, `Rejected appointment ${appointment._id}`);

@@ -157,7 +157,12 @@ VITE_API_URL=http://localhost:5000/api
 ```
 
 ---
-
+QR code scanning is now implemented on frontend; 
+SecurityDashboard can accepts manual Pass ID input as well as actual QR scanner integration
+Seed/demo data script not provided as executable file check backend seed.js
+Multi-organization support mentioned in code but not fully tested or demonstrated in screenshots because this part is bonus so tried it.
+No idea of how to deploy on Docker
+OTP verification implemented as a learning basic
 ## Developed By
 
 Ayush

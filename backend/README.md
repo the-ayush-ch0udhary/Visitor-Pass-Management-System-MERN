@@ -217,8 +217,7 @@ Request Body:
 ```
 
 ---
-
+`SMS notification integration has been implemented using Fast2SMS APIs. Due to Fast2SMS account restrictions requiring a paid transaction before API activation, SMS delivery could not be demonstrated in the development environment. The integration code is fully implemented and ready for production use.`
 ## Developed By
 
-Ayush
-
+Ayush- Backend logic is written by me itself
